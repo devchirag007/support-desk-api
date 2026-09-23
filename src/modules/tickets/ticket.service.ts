@@ -2,22 +2,25 @@ import { NotFoundError } from "../../errors/app-error"
 import type { TicketRepository } from "./ticket.repository"
 import type { CreateTicketInput, ListTicketsQuery, Ticket, UpdateTicketInput } from "./ticket.types"
 
-const matchesSearch = (ticket: Ticket, needle: string): boolean =>
-  [
+// Plain substring matching (String#includes), never a RegExp, so special characters are literal.
+const matchesAllTerms = (ticket: Ticket, terms: string[]): boolean => {
+  const fields = [
     ticket.ticketNumber,
     ticket.subject,
     ticket.description,
     ticket.customerName,
     ticket.customerEmail,
     ...ticket.tags,
-  ].some((field) => field.toLowerCase().includes(needle))
+  ].map((field) => field.toLowerCase())
+  return terms.every((term) => fields.some((field) => field.includes(term)))
+}
 
 export const createTicketService = (repository: TicketRepository) => ({
   async list({ q }: ListTicketsQuery = {}): Promise<Ticket[]> {
     const tickets = await repository.findAll()
-    const needle = q?.trim().toLowerCase()
-    if (!needle) return tickets
-    return tickets.filter((ticket) => matchesSearch(ticket, needle))
+    const terms = q?.toLowerCase().split(/\s+/).filter(Boolean) ?? []
+    if (terms.length === 0) return tickets
+    return tickets.filter((ticket) => matchesAllTerms(ticket, terms))
   },
 
   async getById(id: number): Promise<Ticket> {

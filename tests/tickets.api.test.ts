@@ -167,3 +167,43 @@ describe("GET /api/v1/tickets?q=", () => {
     expect((await search("?q=a&q=b")).status).toBe(400)
   })
 })
+
+describe("GET /api/v1/tickets?q= (multi-word and literal matching)", () => {
+  const search = (q: string) => request(app).get("/api/v1/tickets").query({ q })
+  const numbers = (res: { body: { data: Array<{ ticketNumber: string }> } }) =>
+    res.body.data.map((t) => t.ticketNumber)
+
+  it("requires every word to match, in any field, in any order", async () => {
+    const payment = numbers(await search("payment"))
+    const refund = numbers(await search("refund"))
+    const both = numbers(await search("payment refund"))
+    expect(both.length).toBeGreaterThan(0)
+    expect(both).toEqual(payment.filter((n) => refund.includes(n)))
+    expect(numbers(await search("refund   payment"))).toEqual(both)
+  })
+
+  it("matches words that live in different fields", async () => {
+    const first = (await request(app).get("/api/v1/tickets/1")).body.data
+    const res = await search(`${first.ticketNumber} ${first.customerEmail}`)
+    expect(numbers(res)).toContain(first.ticketNumber)
+  })
+
+  it("returns nothing when one of the words matches nowhere", async () => {
+    const res = await search("payment zzz-no-such-word")
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual([])
+  })
+
+  it.each(["(", "*", "a.b", "%", "[", "\\", "$^"])("treats %j literally", async (q) => {
+    const res = await search(q)
+    expect(res.status).toBe(200)
+    // '.', '*' or '%' acting as wildcards would match (nearly) everything
+    expect(res.body.data.length).toBeLessThan(80)
+  })
+
+  it("matches a literal special character that exists in the data", async () => {
+    const res = await search("@")
+    expect(res.status).toBe(200)
+    expect(res.body.data.length).toBe(80) // every customerEmail contains '@'
+  })
+})
