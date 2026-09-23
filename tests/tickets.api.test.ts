@@ -169,7 +169,7 @@ describe("GET /api/v1/tickets?q=", () => {
 })
 
 describe("GET /api/v1/tickets?q= (multi-word and literal matching)", () => {
-  const search = (q: string) => request(app).get("/api/v1/tickets").query({ q })
+  const search = (q: string) => request(app).get("/api/v1/tickets").query({ q, limit: 50 })
   const numbers = (res: { body: { data: Array<{ ticketNumber: string }> } }) =>
     res.body.data.map((t) => t.ticketNumber)
 
@@ -198,12 +198,79 @@ describe("GET /api/v1/tickets?q= (multi-word and literal matching)", () => {
     const res = await search(q)
     expect(res.status).toBe(200)
     // '.', '*' or '%' acting as wildcards would match (nearly) everything
-    expect(res.body.data.length).toBeLessThan(80)
+    expect(res.body.meta.total).toBeLessThan(80)
   })
 
   it("matches a literal special character that exists in the data", async () => {
     const res = await search("@")
     expect(res.status).toBe(200)
-    expect(res.body.data.length).toBe(80) // every customerEmail contains '@'
+    expect(res.body.meta.total).toBe(80) // every customerEmail contains '@'
+  })
+})
+
+describe("GET /api/v1/tickets pagination and status filter", () => {
+  const get = (query: Record<string, string>) => request(app).get("/api/v1/tickets").query(query)
+  const ids = (res: { body: { data: Array<{ id: number }> } }) => res.body.data.map((t) => t.id)
+
+  it("returns { success, data, meta } with defaults page=1 limit=10", async () => {
+    const res = await get({})
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data).toHaveLength(10)
+    expect(res.body.meta).toEqual({ page: 1, limit: 10, total: 80, totalPages: 8 })
+  })
+
+  it("pages through results and returns an empty page past the end", async () => {
+    const [p1, p2, last, past] = await Promise.all([
+      get({ page: "1", limit: "30" }),
+      get({ page: "2", limit: "30" }),
+      get({ page: "3", limit: "30" }),
+      get({ page: "4", limit: "30" }),
+    ])
+    expect(new Set([...ids(p1), ...ids(p2), ...ids(last)]).size).toBe(80)
+    expect(last.body.data).toHaveLength(20)
+    expect(past.status).toBe(200)
+    expect(past.body.data).toEqual([])
+    expect(past.body.meta).toMatchObject({ page: 4, total: 80, totalPages: 3 })
+  })
+
+  it("returns 400 for bad page/limit, a repeated key or an unknown status", async () => {
+    for (const query of [
+      "limit=51",
+      "limit=0",
+      "page=0",
+      "page=abc",
+      "page=1.5",
+      "page=1&page=2",
+      "status=bogus",
+      "status=open&status=closed",
+      "status=open,bogus",
+    ]) {
+      expect((await request(app).get(`/api/v1/tickets?${query}`)).status).toBe(400)
+    }
+    expect((await get({ limit: "50" })).status).toBe(200)
+  })
+
+  it("combines q with a comma-separated status; total counts all matches, not the page", async () => {
+    const all = await get({ q: "login", limit: "50" })
+    const expected = all.body.data.filter((t: { status: string }) =>
+      ["open", "in_progress"].includes(t.status),
+    )
+    const res = await get({ q: "login", status: "open,in_progress", limit: "1" })
+    expect(res.body.data).toHaveLength(Math.min(1, expected.length))
+    expect(res.body.meta.total).toBe(expected.length)
+    expect(res.body.meta.totalPages).toBe(expected.length)
+
+    const open = await get({ status: "open" })
+    const inProgress = await get({ status: "in_progress" })
+    const both = await get({ status: "open,in_progress" })
+    expect(both.body.meta.total).toBe(open.body.meta.total + inProgress.body.meta.total)
+  })
+
+  it("returns total 0 and totalPages 0 when nothing matches", async () => {
+    const res = await get({ q: "zzz-no-such-ticket", status: "open" })
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual([])
+    expect(res.body.meta).toEqual({ page: 1, limit: 10, total: 0, totalPages: 0 })
   })
 })

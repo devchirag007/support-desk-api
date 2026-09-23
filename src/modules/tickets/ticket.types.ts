@@ -32,8 +32,30 @@ export type NewTicket = Omit<Ticket, "id" | "ticketNumber">
 
 export type CreateTicketInput = Omit<NewTicket, "createdAt" | "updatedAt">
 
+export const DEFAULT_PAGE = 1
+export const DEFAULT_LIMIT = 10
+export const MAX_LIMIT = 50
+
 export interface ListTicketsQuery {
   q?: string
+  status?: TicketStatus[]
+}
+
+export interface ListTicketsPageQuery extends ListTicketsQuery {
+  page?: number
+  limit?: number
+}
+
+export interface PageMeta {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
+export interface TicketPage {
+  data: Ticket[]
+  meta: PageMeta
 }
 
 export type UpdateTicketInput = Partial<Pick<Ticket, "status" | "priority" | "assignee">>

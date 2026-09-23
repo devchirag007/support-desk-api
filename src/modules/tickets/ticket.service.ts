@@ -1,6 +1,15 @@
 import { NotFoundError } from "../../errors/app-error"
 import type { TicketRepository } from "./ticket.repository"
-import type { CreateTicketInput, ListTicketsQuery, Ticket, UpdateTicketInput } from "./ticket.types"
+import {
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  type CreateTicketInput,
+  type ListTicketsPageQuery,
+  type ListTicketsQuery,
+  type Ticket,
+  type TicketPage,
+  type UpdateTicketInput,
+} from "./ticket.types"
 
 // Plain substring matching (String#includes), never a RegExp, so special characters are literal.
 const matchesAllTerms = (ticket: Ticket, terms: string[]): boolean => {
@@ -16,11 +25,31 @@ const matchesAllTerms = (ticket: Ticket, terms: string[]): boolean => {
 }
 
 export const createTicketService = (repository: TicketRepository) => ({
-  async list({ q }: ListTicketsQuery = {}): Promise<Ticket[]> {
-    const tickets = await repository.findAll()
+  // Search first, then the status filter. Always returns a new array.
+  async list({ q, status }: ListTicketsQuery = {}): Promise<Ticket[]> {
+    let tickets = await repository.findAll()
+
     const terms = q?.toLowerCase().split(/\s+/).filter(Boolean) ?? []
-    if (terms.length === 0) return tickets
-    return tickets.filter((ticket) => matchesAllTerms(ticket, terms))
+    if (terms.length > 0) tickets = tickets.filter((ticket) => matchesAllTerms(ticket, terms))
+
+    if (status && status.length > 0) {
+      tickets = tickets.filter((ticket) => status.includes(ticket.status))
+    }
+    return tickets
+  },
+
+  // Search, then filter, then paginate. total counts every match, not just the current page.
+  async listPage({
+    page = DEFAULT_PAGE,
+    limit = DEFAULT_LIMIT,
+    ...query
+  }: ListTicketsPageQuery = {}): Promise<TicketPage> {
+    const matches = await this.list(query)
+    const start = (page - 1) * limit
+    return {
+      data: matches.slice(start, start + limit),
+      meta: { page, limit, total: matches.length, totalPages: Math.ceil(matches.length / limit) },
+    }
   },
 
   async getById(id: number): Promise<Ticket> {

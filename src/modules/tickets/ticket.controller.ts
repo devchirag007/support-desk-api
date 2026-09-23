@@ -11,8 +11,8 @@ import type { TicketService } from "./ticket.service"
 export const createTicketController = (service: TicketService) => {
   const list = asyncHandler(async (req, res) => {
     const query = listTicketsQuerySchema.parse(req.query)
-    const tickets = await service.list(query)
-    res.status(200).json({ success: true, data: tickets })
+    const { data, meta } = await service.listPage(query)
+    res.status(200).json({ success: true, data, meta })
   })
 
   const getById = asyncHandler(async (req, res) => {
