@@ -129,3 +129,41 @@ describe("misc", () => {
     expect(res.body.success).toBe(false)
   })
 })
+
+describe("GET /api/v1/tickets?q=", () => {
+  const search = (qs: string) => request(app).get(`/api/v1/tickets${qs}`)
+
+  it("matches case-insensitively on partial ticketNumber", async () => {
+    const res = await search("?q=tkt-1001")
+    expect(res.status).toBe(200)
+    expect(res.body.data.map((t: { ticketNumber: string }) => t.ticketNumber)).toContain("TKT-1001")
+  })
+
+  it("matches on tags and on customer email", async () => {
+    const byTag = await search("?q=BILLING")
+    expect(byTag.body.data.length).toBeGreaterThan(0)
+    const email = byTag.body.data[0].customerEmail
+    const byEmail = await search(`?q=${encodeURIComponent(email.toUpperCase())}`)
+    expect(byEmail.body.data.length).toBeGreaterThan(0)
+  })
+
+  it("ignores surrounding whitespace and treats blank q as no filter", async () => {
+    const all = await search("")
+    const trimmed = await search("?q=%20%20login%20%20")
+    const exact = await search("?q=login")
+    expect(trimmed.body.data).toEqual(exact.body.data)
+    expect((await search("?q=%20%20")).body.data).toEqual(all.body.data)
+  })
+
+  it("returns 200 with an empty array when nothing matches", async () => {
+    const res = await search("?q=zzz-no-such-ticket")
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual([])
+  })
+
+  it("returns 400 for q over 100 chars or a repeated q", async () => {
+    expect((await search(`?q=${"a".repeat(101)}`)).status).toBe(400)
+    expect((await search(`?q=${"a".repeat(100)}`)).status).toBe(200)
+    expect((await search("?q=a&q=b")).status).toBe(400)
+  })
+})

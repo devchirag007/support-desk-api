@@ -5,6 +5,11 @@ export const idParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 })
 
+// A repeated key (?q=a&q=b) arrives as an array, which z.string() rejects.
+export const listTicketsQuerySchema = z.object({
+  q: z.string().trim().max(100).optional(),
+})
+
 export const createTicketSchema = z.object({
   subject: z.string().trim().min(3).max(200),
   description: z.string().trim().min(1).max(2000),

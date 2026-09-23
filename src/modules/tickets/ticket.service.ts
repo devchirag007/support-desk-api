@@ -1,10 +1,23 @@
 import { NotFoundError } from "../../errors/app-error"
 import type { TicketRepository } from "./ticket.repository"
-import type { CreateTicketInput, Ticket, UpdateTicketInput } from "./ticket.types"
+import type { CreateTicketInput, ListTicketsQuery, Ticket, UpdateTicketInput } from "./ticket.types"
+
+const matchesSearch = (ticket: Ticket, needle: string): boolean =>
+  [
+    ticket.ticketNumber,
+    ticket.subject,
+    ticket.description,
+    ticket.customerName,
+    ticket.customerEmail,
+    ...ticket.tags,
+  ].some((field) => field.toLowerCase().includes(needle))
 
 export const createTicketService = (repository: TicketRepository) => ({
-  async list(): Promise<Ticket[]> {
-    return repository.findAll()
+  async list({ q }: ListTicketsQuery = {}): Promise<Ticket[]> {
+    const tickets = await repository.findAll()
+    const needle = q?.trim().toLowerCase()
+    if (!needle) return tickets
+    return tickets.filter((ticket) => matchesSearch(ticket, needle))
   },
 
   async getById(id: number): Promise<Ticket> {

@@ -32,4 +32,8 @@ export type NewTicket = Omit<Ticket, "id" | "ticketNumber">
 
 export type CreateTicketInput = Omit<NewTicket, "createdAt" | "updatedAt">
 
+export interface ListTicketsQuery {
+  q?: string
+}
+
 export type UpdateTicketInput = Partial<Pick<Ticket, "status" | "priority" | "assignee">>

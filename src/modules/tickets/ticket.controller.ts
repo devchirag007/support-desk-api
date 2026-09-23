@@ -1,11 +1,17 @@
 import { asyncHandler } from "../../utils/async-handler"
-import { createTicketSchema, idParamSchema, updateTicketSchema } from "./ticket.schema"
+import {
+  createTicketSchema,
+  idParamSchema,
+  listTicketsQuerySchema,
+  updateTicketSchema,
+} from "./ticket.schema"
 import type { TicketService } from "./ticket.service"
 
 // asyncHandler forwards rejected promises to the error middleware (Express 4 needs this).
 export const createTicketController = (service: TicketService) => {
-  const list = asyncHandler(async (_req, res) => {
-    const tickets = await service.list()
+  const list = asyncHandler(async (req, res) => {
+    const query = listTicketsQuerySchema.parse(req.query)
+    const tickets = await service.list(query)
     res.status(200).json({ success: true, data: tickets })
   })
 
