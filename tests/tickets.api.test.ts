@@ -274,3 +274,18 @@ describe("GET /api/v1/tickets pagination and status filter", () => {
     expect(res.body.meta).toEqual({ page: 1, limit: 10, total: 0, totalPages: 0 })
   })
 })
+
+describe("GET /api/v1/tickets?q= relevance across pages", () => {
+  const ids = (res: { body: { data: Array<{ id: number }> } }) => res.body.data.map((t) => t.id)
+
+  it("sorts by relevance before paginating", async () => {
+    const all = await request(app).get("/api/v1/tickets").query({ q: "payment", limit: 50 })
+    const pages = await Promise.all(
+      [1, 2, 3].map((page) =>
+        request(app).get("/api/v1/tickets").query({ q: "payment", limit: 4, page }),
+      ),
+    )
+    expect(all.body.meta.total).toBeGreaterThan(8)
+    expect(pages.flatMap(ids)).toEqual(ids(all).slice(0, 12))
+  })
+})

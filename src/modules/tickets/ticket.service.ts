@@ -11,26 +11,61 @@ import {
   type UpdateTicketInput,
 } from "./ticket.types"
 
+// Higher tier = more relevant: ticketNumber > subject > tags > customerName/customerEmail > description.
+const searchableFields = (ticket: Ticket): Array<{ tier: number; text: string }> =>
+  [
+    { tier: 5, text: ticket.ticketNumber },
+    { tier: 4, text: ticket.subject },
+    ...ticket.tags.map((tag) => ({ tier: 3, text: tag })),
+    { tier: 2, text: ticket.customerName },
+    { tier: 2, text: ticket.customerEmail },
+    { tier: 1, text: ticket.description },
+  ].map(({ tier, text }) => ({ tier, text: text.toLowerCase() }))
+
+// One tier per term (the best field it matches), strongest first; null if any term matches nowhere.
 // Plain substring matching (String#includes), never a RegExp, so special characters are literal.
-const matchesAllTerms = (ticket: Ticket, terms: string[]): boolean => {
-  const fields = [
-    ticket.ticketNumber,
-    ticket.subject,
-    ticket.description,
-    ticket.customerName,
-    ticket.customerEmail,
-    ...ticket.tags,
-  ].map((field) => field.toLowerCase())
-  return terms.every((term) => fields.some((field) => field.includes(term)))
+const scoreTicket = (ticket: Ticket, terms: string[]): number[] | null => {
+  const fields = searchableFields(ticket)
+  const tiers: number[] = []
+  for (const term of terms) {
+    const tier = Math.max(0, ...fields.filter((f) => f.text.includes(term)).map((f) => f.tier))
+    if (tier === 0) return null
+    tiers.push(tier)
+  }
+  return tiers.sort((a, b) => b - a)
 }
 
+interface Scored {
+  ticket: Ticket
+  score: number[]
+}
+
+// Every scored ticket has one tier per term, so the arrays always have equal length.
+const compareByRelevance = (a: Scored, b: Scored): number => {
+  for (let i = 0; i < a.score.length; i++) {
+    if (a.score[i] !== b.score[i]) return b.score[i]! - a.score[i]!
+  }
+  const byCreatedAt = Date.parse(b.ticket.createdAt) - Date.parse(a.ticket.createdAt)
+  return byCreatedAt !== 0 ? byCreatedAt : a.ticket.id - b.ticket.id
+}
+
+// Keeps tickets matching every term, most relevant first. Returns a new array.
+const searchByRelevance = (tickets: Ticket[], terms: string[]): Ticket[] =>
+  tickets
+    .flatMap((ticket) => {
+      const score = scoreTicket(ticket, terms)
+      return score ? [{ ticket, score }] : []
+    })
+    .sort(compareByRelevance)
+    .map(({ ticket }) => ticket)
+
 export const createTicketService = (repository: TicketRepository) => ({
-  // Search first, then the status filter. Always returns a new array.
+  // Search (relevance-ordered when q is present), then the status filter. Always returns a new array.
   async list({ q, status }: ListTicketsQuery = {}): Promise<Ticket[]> {
     let tickets = await repository.findAll()
 
     const terms = q?.toLowerCase().split(/\s+/).filter(Boolean) ?? []
-    if (terms.length > 0) tickets = tickets.filter((ticket) => matchesAllTerms(ticket, terms))
+    if (terms.length > 0) tickets = searchByRelevance(tickets, terms)
 
     if (status && status.length > 0) {
       tickets = tickets.filter((ticket) => status.includes(ticket.status))
